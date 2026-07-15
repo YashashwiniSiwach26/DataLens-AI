@@ -21,5 +21,19 @@ print(f"name:{student['name']},age:{student['age']},cgpa:{student['cgpa']}")
 def greet():
     print("Welcome to my project!")
 greet()
+if age>=18:
+    print(f"hello{name},you are elgible to use the platform")
+else:
+    print(f"Sorry{name},you are not elgible to use the platform")
+skill=["Python","Machine Learning","Git","Data Analysis"]
+print("\nSkills:")
+for s in skill:
+    print(f"skill:{s}")
+with open ("notes.txt","w") as file:
+    file.write(f"User:{name}\n")
+    file.write(f"Age:{age}\n")
+    file.write(f"CGPA:{cgpa}\n")
+    file.write("Stay tuned for more updates!\n")
+
 
 
