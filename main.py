@@ -34,6 +34,8 @@ with open ("notes.txt","w") as file:
     file.write(f"Age:{age}\n")
     file.write(f"CGPA:{cgpa}\n")
     file.write("Stay tuned for more updates!\n")
+import numpy as np
+
 
 
 
