@@ -17,3 +17,4 @@ minmax=MinMaxScaler()
 df["Marks_scaled"]=minmax.fit_transform(df[["Marks"]])
 print(df[["Marks","Marks_scaled"]])
 df.to_csv("datasets/preprocessed_students.csv",index=False)
+df["City"]=["Delhi","Mumbai","Noida","Chennai"]
