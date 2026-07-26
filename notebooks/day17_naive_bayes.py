@@ -1,6 +1,6 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB 
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
     accuracy_score,
@@ -18,16 +18,14 @@ print(df)
 X=df[["Hours","Attendance"]]
 y=df["Pass"]
 X_train,X_test,y_train,y_test=train_test_split(X,y,test_size=0.2,random_state=42)
-scaler=StandardScaler()
-X_train=scaler.fit_transform(X_train)
-X_test=scaler.transform(X_test)
-model=KNeighborsClassifier(n_neighbors=3)
+model=GaussianNB()
 model.fit(X_train,y_train)
 predictions=model.predict(X_test)
 accuracy=accuracy_score(y_test,predictions)
 print("Accuracy:",accuracy)
 cm=confusion_matrix(y_test,predictions)
 print(classification_report(y_test,predictions))
-new_student=scaler.transform([[6.5,84]])
-prediction=model.predict(new_student)
+prediction=model.predict([[6.5,84]])
 print(prediction)
+probablity=model.predict_proba([[6.5,84]])
+print(probablity)
