@@ -50,3 +50,18 @@ def upload_dataset(file:UploadFile=File(...)):
 #2. Easy to use: FastAPI is designed to be easy to use and intuitive, with automatic validation and serialization of request and response data.
 #3. Automatic documentation: FastAPI automatically generates interactive API documentation using Swagger UI and ReDoc   
 #more function like get and post are available in fastapi like put, delete, patch, options, head, trace. These methods correspond to the standard HTTP methods and can be used to define endpoints for different types of requests. Each method serves a specific purpose in RESTful API design, allowing developers to create a comprehensive and well-structured API. 
+from fastapi import FastAPI, UploadFile, File
+import pandas as pd
+
+app=FastAPI()
+@app.post("/upload-dataset/")
+def upload_dataset(file:UploadFile=File(...)):
+    # Read the uploaded file into a pandas DataFrame
+    #preview the first five rows of the dataset and return it as a dictionary  bcoz the data is in tabular format and we can use pandas to read the data and return it as a dictionary.
+    df = pd.read_csv(file.file)
+    print(df)
+    return {
+        "filename": file.filename,
+        "preview":df.head().to_dict(orient="records")
+        
+    }
