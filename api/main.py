@@ -61,7 +61,28 @@ def upload_dataset(file:UploadFile=File(...)):
     df = pd.read_csv(file.file)
     print(df)
     return {
-        "filename": file.filename,
+        "filename": file.filename,#file.filename is used to get the name of the file that is uploaded. this helps in identifying the file and also in saving the file with the same name. if it was file.file, it would return the file object instead of the filename.
         "preview":df.head().to_dict(orient="records")
         
+    }
+@app.post("/upload-dataset/")
+def upload_dataset(file:UploadFile=File(...)):
+    # Read the uploaded file into a pandas DataFrame
+    df = pd.read_csv(file.file)
+    rows,columans=df.shape
+    column_name=df.columns.tolist()
+    missing_values=df.isnull().sum().to_dict()#why is dict used here? because it is used to convert the series object to a dictionary object. this helps in returning the missing values in a key-value pair format. ex: {'column1': 0, 'column2': 5, 'column3': 2}
+    duplicate_rows=df.duplicated().sum()#why is sum used here? because it is used to count the number of duplicate rows in the dataset. this helps in identifying the number of duplicate rows in the dataset.
+    data_types=df.dtypes.to_dict()#why is dict used here? because it is used to convert the series object to a dictionary object. this helps in returning the data types of each column in a key-value pair format. ex: {'column1': 'int64', 'column2': 'float64', 'column3': 'object'}
+    
+    # Preview the first five rows of the dataset and return it as a dictionary
+    return {
+        "filename": file.filename,
+        "row":rows,
+        "columns":columans,
+        "missing_value":missing_values,
+        "duplicate_rows":duplicate_rows,
+        "data_types":data_types,
+
+        "preview": df.head().to_dict(orient="records")
     }
