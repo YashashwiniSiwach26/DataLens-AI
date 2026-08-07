@@ -1,5 +1,7 @@
 Name,Age,Marks,Passed
 yasha,20,70,Yes
 yuvi,21,80,Yes
-sneha,22,82,Yes
-priya,23,91,Yes
+sneha,22,82,No
+priya,23,91,No
+rahul,21,60,Yes
+aman,20,25,No
