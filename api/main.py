@@ -78,15 +78,18 @@ def upload_dataset(file: UploadFile = File(...)):
     for column in categorical_columns:
         encoder = LabelEncoder()
         df[column]=encoder.fit_transform(df[column])
-        label_encoders[column] = list(encoder.classes_)
+        label_encoders[column] = encoder
+        joblib.dump(label_encoders, "label_encoder.pkl")
 
 
     scaler = StandardScaler()
     if numerical_columns:
         df[numerical_columns] = scaler.fit_transform(df[numerical_columns])
+        joblib.dump(scaler, "scaler.pkl")
 
     X=df[feature_columns]
     y=df[target_column]
+    joblib.dump(feature_columns, "feature_columns.pkl")
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     models={
         "Logistic Regression": LogisticRegression(),
@@ -131,3 +134,18 @@ def predict(data:dict):
     prediction=model.predict(input_data)
     return {"prediction": int(prediction[0])
         }
+
+@app.post("/predict")
+def predict(data: dict):
+    model=joblib.load("best_model.pkl")
+    scaler=joblib.load("scaler.pkl")
+    label_encoders=joblib.load("label_encoder.pkl")
+    feature_columns=joblib.load("feature_columns.pkl")
+    input_df=pd.DataFrame([data])
+    for column,encoder in label_encoders.items():
+        input_df[column]=encoder.transform(input_df[column])
+    if numerical_columns:
+            input_df[numerical_columns]=scaler.transform(input_df[numerical_columns])
+    input_df=input_df[feature_columns]
+    prediction=model.predict(input_df)
+    return {"prediction": int(prediction[0])} 
