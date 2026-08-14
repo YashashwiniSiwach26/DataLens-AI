@@ -1,5 +1,7 @@
 from fastapi import FastAPI, UploadFile, File
 import pandas as pd
+import joblib
+
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
@@ -8,22 +10,16 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-import joblib
+from sklearn.metrics import accuracy_score
 
-# Create FastAPI application
 app = FastAPI()
 
 
-# Home Endpoint
 @app.get("/")
 def home():
-    return {
-        "message": "Welcome to DataLens AI!"
-    }
+    return {"message": "Welcome to DataLens AI!"}
 
 
-# About Endpoint
 @app.get("/about")
 def about():
     return {
@@ -33,15 +29,11 @@ def about():
     }
 
 
-# Health Check Endpoint
 @app.get("/health")
 def health():
-    return {
-        "status": "running"
-    }
+    return {"status": "running"}
 
 
-# Models Endpoint
 @app.get("/models")
 def models():
     return {
@@ -54,60 +46,206 @@ def models():
             "Naive Bayes"
         ]
     }
+
+
 @app.post("/upload-dataset/")
 def upload_dataset(file: UploadFile = File(...)):
-    # Read the uploaded CSV file
+
     df = pd.read_csv(file.file)
 
     rows = int(df.shape[0])
     columns = int(df.shape[1])
+
     column_names = df.columns.tolist()
 
     missing_values = {
-        col: int(val) for col, val in df.isnull().sum().items()
+        col: int(value)
+        for col, value in df.isnull().sum().items()
     }
-    duplicate_rows = int(df.duplicated().sum())
-    data_types = {col: str(dtype) for col, dtype in df.dtypes.items()}
 
-    numerical_columns = list(df.select_dtypes(include=["number"]).columns)
-    categorical_columns = list(df.select_dtypes(include=["object"]).columns)
+    duplicate_rows = int(df.duplicated().sum())
+
+    data_types = {
+        col: str(dtype)
+        for col, dtype in df.dtypes.items()
+    }
 
     target_column = df.columns[-1]
-    feature_columns = df.columns[:-1].tolist()
-    label_encoders = {}
-    for column in categorical_columns:
-        encoder = LabelEncoder()
-        df[column]=encoder.fit_transform(df[column])
-        label_encoders[column] = encoder
-        joblib.dump(label_encoders, "label_encoder.pkl")
 
+    feature_columns = df.columns[:-1].tolist()
+
+    numerical_columns = []
+    categorical_columns = []
+
+    for column in feature_columns:
+
+        if pd.api.types.is_numeric_dtype(df[column]):
+            numerical_columns.append(column)
+
+        else:
+            categorical_columns.append(column)
+
+    label_encoders = {}
+
+    for column in categorical_columns:
+
+        encoder = LabelEncoder()
+
+        df[column] = encoder.fit_transform(
+            df[column].astype(str)
+        )
+
+        label_encoders[column] = encoder
+
+    X = df[feature_columns].copy()
+
+    y = df[target_column].copy()
+
+    if not pd.api.types.is_numeric_dtype(y):
+
+        target_encoder = LabelEncoder()
+
+        y = target_encoder.fit_transform(
+            y.astype(str)
+        )
+
+        joblib.dump(
+            target_encoder,
+            "target_encoder.pkl"
+        )
+
+    else:
+
+        target_encoder = None
 
     scaler = StandardScaler()
+
     if numerical_columns:
-        df[numerical_columns] = scaler.fit_transform(df[numerical_columns])
-        joblib.dump(scaler, "scaler.pkl")
 
-    X=df[feature_columns]
-    y=df[target_column]
-    joblib.dump(feature_columns, "feature_columns.pkl")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    models={
-        "Logistic Regression": LogisticRegression(),
-        "Decision Tree": DecisionTreeClassifier(),
-        "Random Forest": RandomForestClassifier(),
+        X[numerical_columns] = scaler.fit_transform(
+            X[numerical_columns]
+        )
+
+    if len(set(y)) < 2:
+
+        return {
+            "error": "Target column must contain at least two classes.",
+            "target_column": target_column
+        }
+
+    if len(df) < 10:
+
+        return {
+            "error": "Dataset is too small. Please use at least 10 rows."
+        }
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+        stratify=y
+    )
+
+    model_list = {
+        "Logistic Regression": LogisticRegression(
+            max_iter=1000
+        ),
+        "Decision Tree": DecisionTreeClassifier(
+            random_state=42
+        ),
+        "Random Forest": RandomForestClassifier(
+            random_state=42
+        ),
         "SVM": SVC(),
-        "KNN": KNeighborsClassifier(n_neighbors=3),
-        "Naive Bayes": GaussianNB()}
-    scores={}
-    for name,model in models.items():
-        model.fit(X_train,y_train)
-        predictions=model.predict(X_test)
-        accuracy=accuracy_score(y_test,predictions)
-        scores[name]=round(accuracy*100, 2)
+        "KNN": KNeighborsClassifier(
+            n_neighbors=3
+        ),
+        "Naive Bayes": GaussianNB()
+    }
 
-    best_model_name=max(scores,key=scores.get)
-    best_model=models[best_model_name]
-    joblib.dump(best_model,"best_model.pkl")    
+    scores = {}
+
+    trained_models = {}
+
+    for name, model in model_list.items():
+
+        try:
+
+            model.fit(
+                X_train,
+                y_train
+            )
+
+            predictions = model.predict(
+                X_test
+            )
+
+            accuracy = accuracy_score(
+                y_test,
+                predictions
+            )
+
+            scores[name] = round(
+                accuracy * 100,
+                2
+            )
+
+            trained_models[name] = model
+
+        except Exception:
+
+            pass
+
+    if len(scores) == 0:
+
+        return {
+            "error": "None of the models could be trained.",
+            "model_scores": {}
+        }
+
+    best_model_name = max(
+        scores,
+        key=scores.get
+    )
+
+    best_model = trained_models[
+        best_model_name
+    ]
+
+    joblib.dump(
+        best_model,
+        "best_model.pkl"
+    )
+
+    joblib.dump(
+        scaler,
+        "scaler.pkl"
+    )
+
+    joblib.dump(
+        label_encoders,
+        "label_encoder.pkl"
+    )
+
+    joblib.dump(
+        feature_columns,
+        "feature_columns.pkl"
+    )
+
+    joblib.dump(
+        numerical_columns,
+        "numerical_columns.pkl"
+    )
+
+    label_mapping = {}
+
+    for column, encoder in label_encoders.items():
+
+        label_mapping[column] = (
+            encoder.classes_.tolist()
+        )
+
     return {
         "filename": file.filename,
         "rows": rows,
@@ -120,32 +258,63 @@ def upload_dataset(file: UploadFile = File(...)):
         "categorical_columns": categorical_columns,
         "feature_columns": feature_columns,
         "target_column": target_column,
-        "preview": df.head().to_dict(orient="records"),
-        "encoded_preview": df.head().to_dict(orient="records"),
-        "label_mapping": label_encoders,
+        "preview": df.head().to_dict(
+            orient="records"
+        ),
+        "label_mapping": label_mapping,
         "model_scores": scores,
         "best_model": best_model_name
     }
 
-@app.post("/predict")
-def predict(data:dict):
-    model=joblib.load("best_model.pkl")
-    input_data=pd.DataFrame([data])
-    prediction=model.predict(input_data)
-    return {"prediction": int(prediction[0])
-        }
 
 @app.post("/predict")
 def predict(data: dict):
-    model=joblib.load("best_model.pkl")
-    scaler=joblib.load("scaler.pkl")
-    label_encoders=joblib.load("label_encoder.pkl")
-    feature_columns=joblib.load("feature_columns.pkl")
-    input_df=pd.DataFrame([data])
-    for column,encoder in label_encoders.items():
-        input_df[column]=encoder.transform(input_df[column])
+
+    model = joblib.load(
+        "best_model.pkl"
+    )
+
+    scaler = joblib.load(
+        "scaler.pkl"
+    )
+
+    label_encoders = joblib.load(
+        "label_encoder.pkl"
+    )
+
+    feature_columns = joblib.load(
+        "feature_columns.pkl"
+    )
+
+    numerical_columns = joblib.load(
+        "numerical_columns.pkl"
+    )
+
+    input_df = pd.DataFrame([data])
+
+    for column, encoder in label_encoders.items():
+
+        input_df[column] = encoder.transform(
+            input_df[column].astype(str)
+        )
+
     if numerical_columns:
-        input_df[numerical_columns]=scaler.transform(input_df[numerical_columns])
-    input_df=input_df[feature_columns]
-    prediction=model.predict(input_df)
-    return {"prediction": int(prediction[0])} 
+
+        input_df[numerical_columns] = scaler.transform(
+            input_df[numerical_columns]
+        )
+
+    input_df = input_df[
+        feature_columns
+    ]
+
+    prediction = model.predict(
+        input_df
+    )
+
+    if "target_encoder.pkl" in []:
+        pass
+
+    return {
+        "prediction": int(prediction[0])
+    }

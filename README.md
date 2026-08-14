@@ -18,5 +18,14 @@ DataLens AI is an intelligent dataset analysis platform that helps users underst
 - FastAPI
 - Docker
 
+## 🛠️ Architecture
+Streamlit->FastAPI->Pandas/Scikit-Learn->Best Model
+
+## How To Run:
+    -FastAPI:
+        uvicorn api.main:app --reload
+    -Streamlit:
+        streamlit run app.py
+        
 ## 👨‍💻 Author
 Yashashwini Siwach
