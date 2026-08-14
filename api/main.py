@@ -145,7 +145,7 @@ def predict(data: dict):
     for column,encoder in label_encoders.items():
         input_df[column]=encoder.transform(input_df[column])
     if numerical_columns:
-            input_df[numerical_columns]=scaler.transform(input_df[numerical_columns])
+        input_df[numerical_columns]=scaler.transform(input_df[numerical_columns])
     input_df=input_df[feature_columns]
     prediction=model.predict(input_df)
     return {"prediction": int(prediction[0])} 
