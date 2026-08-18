@@ -3,41 +3,27 @@ import pandas as pd
 import requests
 
 st.set_page_config(
-    page_title="DataLens AI",
-    page_icon="🤖",
+    page_title="DataLens-AI",
+    page_icon="📊",
     layout="wide"
 )
 
-st.title("🤖 DataLens AI")
+st.title("DataLens AI")
 
 st.subheader(
     "Automated Machine Learning and Data Analysis Platform"
 )
-
-st.sidebar.title("DataLens AI")
-
-st.sidebar.write(
-    "Automated Machine Learning Platform "
-    "for Dataset Analysis and Model Selection"
-)
-
-st.sidebar.write("Built with:")
-st.sidebar.write("- Python")
-st.sidebar.write("- Streamlit")
-st.sidebar.write("- FastAPI")
-st.sidebar.write("- Pandas")
-st.sidebar.write("- Scikit-learn")
-
 
 uploaded_file = st.file_uploader(
     "Upload your CSV dataset",
     type=["csv"]
 )
 
-
 if uploaded_file is not None:
 
-    df = pd.read_csv(uploaded_file)
+    df = pd.read_csv(
+        uploaded_file
+    )
 
     st.success(
         "Dataset uploaded successfully!"
@@ -63,23 +49,84 @@ if uploaded_file is not None:
             int(df.duplicated().sum())
         )
 
-    st.header("Dataset Preview")
+    st.subheader(
+        "Dataset Preview"
+    )
 
     st.dataframe(
-        df,
+        df.head(),
         use_container_width=True
     )
 
-    st.header("Missing Values")
+    st.subheader(
+        "Data Types"
+    )
 
-    missing_values = df.isnull().sum()
+    data_types = pd.DataFrame({
+        "Column": df.columns,
+        "Data Type": df.dtypes.astype(str)
+    })
 
     st.dataframe(
-        missing_values
+        data_types,
+        use_container_width=True
+    )
+
+    st.subheader(
+        "Missing Values"
+    )
+
+    missing_values = pd.DataFrame({
+        "Column": df.columns,
+        "Missing Values": df.isnull().sum().values
+    })
+
+    st.dataframe(
+        missing_values,
+        use_container_width=True
+    )
+
+    numerical_columns = df.select_dtypes(
+        include=["number"]
+    ).columns.tolist()
+
+    categorical_columns = df.select_dtypes(
+        include=["object", "category"]
+    ).columns.tolist()
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        st.write(
+            "Numerical Columns"
+        )
+
+        st.write(
+            numerical_columns
+        )
+
+    with col2:
+
+        st.write(
+            "Categorical Columns"
+        )
+
+        st.write(
+            categorical_columns
+        )
+
+    st.info(
+        "The last column will be used as the target column."
+    )
+
+    st.write(
+        "Target Column:",
+        df.columns[-1]
     )
 
     if st.button(
-        "🚀 Analyze Dataset"
+        "Analyze Dataset"
     ):
 
         files = {
@@ -99,23 +146,27 @@ if uploaded_file is not None:
 
             result = response.json()
 
-            if response.status_code != 200:
-
-                st.error(
-                    "FastAPI returned an error."
-                )
-
-                st.json(result)
-
-            elif "error" in result:
+            if "error" in result:
 
                 st.error(
                     result["error"]
                 )
 
-                st.json(result)
+                if "model_scores" in result:
 
-            else:
+                    st.subheader(
+                        "Model Training Details"
+                    )
+
+                    for name, score in result[
+                        "model_scores"
+                    ].items():
+
+                        st.write(
+                            f"{name}: {score}"
+                        )
+
+            elif response.status_code == 200:
 
                 st.success(
                     "Dataset analyzed successfully!"
@@ -125,92 +176,102 @@ if uploaded_file is not None:
                     "Model Performance"
                 )
 
-                scores = result[
-                    "model_scores"
-                ]
+                scores = result.get(
+                    "model_scores",
+                    {}
+                )
 
                 for model_name, score in scores.items():
 
                     st.write(
-                        f"**{model_name}: {score}%**"
+                        f"**{model_name}**"
                     )
 
-                    st.progress(
-                        float(score) / 100
+                    if isinstance(
+                        score,
+                        (int, float)
+                    ):
+
+                        st.write(
+                            f"Accuracy: {score}%"
+                        )
+
+                        st.progress(
+                            min(
+                                float(score) / 100,
+                                1.0
+                            )
+                        )
+
+                    else:
+
+                        st.error(
+                            str(score)
+                        )
+
+                if "best_model" in result:
+
+                    st.success(
+                        f"Best Model: "
+                        f"{result['best_model']}"
                     )
 
                 st.header(
-                    "Best Model"
+                    "Analysis Summary"
                 )
 
-                st.success(
-                    f"🏆 {result['best_model']}"
-                )
-
-                st.header(
-                    "Dataset Information"
-                )
-
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
 
                 with col1:
 
-                    st.write(
-                        "**Numerical Columns**"
-                    )
-
-                    st.write(
-                        result[
-                            "numerical_columns"
-                        ]
+                    st.metric(
+                        "Features",
+                        len(
+                            result[
+                                "feature_columns"
+                            ]
+                        )
                     )
 
                 with col2:
 
-                    st.write(
-                        "**Categorical Columns**"
+                    st.metric(
+                        "Numerical Columns",
+                        len(
+                            result[
+                                "numerical_columns"
+                            ]
+                        )
                     )
 
-                    st.write(
-                        result[
-                            "categorical_columns"
-                        ]
+                with col3:
+
+                    st.metric(
+                        "Categorical Columns",
+                        len(
+                            result[
+                                "categorical_columns"
+                            ]
+                        )
                     )
 
                 st.write(
-                    "**Target Column:**",
-                    result["target_column"]
+                    "Target Column:",
+                    result[
+                        "target_column"
+                    ]
                 )
 
-                st.write(
-                    "**Feature Columns:**",
-                    result["feature_columns"]
-                )
+            else:
 
-                st.header(
-                    "Label Mapping"
-                )
-
-                st.json(
-                    result["label_mapping"]
+                st.error(
+                    "Backend error occurred."
                 )
 
         except requests.exceptions.ConnectionError:
 
             st.error(
-                "Could not connect to FastAPI."
-            )
-
-            st.info(
-                "Start FastAPI using:"
-            )
-
-            st.code(
-                "uvicorn api.main:app --reload"
-            )
-
-        except Exception as e:
-
-            st.error(
-                f"Error: {str(e)}"
+                "Cannot connect to FastAPI. "
+                "Start the API using "
+                "'uvicorn api.main:app --reload'."
             )

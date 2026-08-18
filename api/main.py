@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File
 import pandas as pd
+import numpy as np
 import joblib
 
 from sklearn.preprocessing import StandardScaler, LabelEncoder
@@ -14,25 +15,25 @@ from sklearn.metrics import accuracy_score
 
 app = FastAPI()
 
-
 @app.get("/")
 def home():
-    return {"message": "Welcome to DataLens AI!"}
-
+    return {
+        "message": "Welcome to DataLens AI"
+    }
 
 @app.get("/about")
 def about():
     return {
         "project": "DataLens AI",
         "version": "1.0",
-        "developer": "Yashashwini Siwach"
+        "type": "General Purpose Classification"
     }
-
 
 @app.get("/health")
 def health():
-    return {"status": "running"}
-
+    return {
+        "status": "running"
+    }
 
 @app.get("/models")
 def models():
@@ -47,11 +48,20 @@ def models():
         ]
     }
 
-
 @app.post("/upload-dataset/")
 def upload_dataset(file: UploadFile = File(...)):
 
     df = pd.read_csv(file.file)
+
+    if df.empty:
+        return {
+            "error": "Dataset is empty."
+        }
+
+    if df.shape[1] < 2:
+        return {
+            "error": "Dataset must contain at least one feature and one target column."
+        }
 
     rows = int(df.shape[0])
     columns = int(df.shape[1])
@@ -74,16 +84,20 @@ def upload_dataset(file: UploadFile = File(...)):
 
     feature_columns = df.columns[:-1].tolist()
 
-    numerical_columns = []
-    categorical_columns = []
+    numerical_columns = df[feature_columns].select_dtypes(
+        include=["number"]
+    ).columns.tolist()
 
-    for column in feature_columns:
+    categorical_columns = df[feature_columns].select_dtypes(
+        include=["object", "category"]
+    ).columns.tolist()
 
-        if pd.api.types.is_numeric_dtype(df[column]):
-            numerical_columns.append(column)
+    df = df.dropna()
 
-        else:
-            categorical_columns.append(column)
+    if df.empty:
+        return {
+            "error": "No data remains after removing missing values."
+        }
 
     label_encoders = {}
 
@@ -97,16 +111,12 @@ def upload_dataset(file: UploadFile = File(...)):
 
         label_encoders[column] = encoder
 
-    X = df[feature_columns].copy()
-
-    y = df[target_column].copy()
-
-    if not pd.api.types.is_numeric_dtype(y):
+    if df[target_column].dtype == "object" or str(df[target_column].dtype) == "category":
 
         target_encoder = LabelEncoder()
 
-        y = target_encoder.fit_transform(
-            y.astype(str)
+        df[target_column] = target_encoder.fit_transform(
+            df[target_column].astype(str)
         )
 
         joblib.dump(
@@ -122,45 +132,81 @@ def upload_dataset(file: UploadFile = File(...)):
 
     if numerical_columns:
 
-        X[numerical_columns] = scaler.fit_transform(
-            X[numerical_columns]
+        df[numerical_columns] = scaler.fit_transform(
+            df[numerical_columns]
         )
 
-    if len(set(y)) < 2:
+    joblib.dump(
+        scaler,
+        "scaler.pkl"
+    )
+
+    joblib.dump(
+        label_encoders,
+        "label_encoder.pkl"
+    )
+
+    joblib.dump(
+        numerical_columns,
+        "numerical_columns.pkl"
+    )
+
+    joblib.dump(
+        categorical_columns,
+        "categorical_columns.pkl"
+    )
+
+    joblib.dump(
+        feature_columns,
+        "feature_columns.pkl"
+    )
+
+    joblib.dump(
+        target_column,
+        "target_column.pkl"
+    )
+
+    X = df[feature_columns]
+
+    y = df[target_column]
+
+    if y.nunique() < 2:
 
         return {
-            "error": "Target column must contain at least two classes.",
-            "target_column": target_column
+            "error": "Target column must contain at least two classes."
         }
 
     if len(df) < 10:
 
         return {
-            "error": "Dataset is too small. Please use at least 10 rows."
+            "error": "Dataset is too small. Use at least 10 rows."
         }
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.2,
-        random_state=42,
-        stratify=y
-    )
+    try:
 
-    model_list = {
-        "Logistic Regression": LogisticRegression(
-            max_iter=1000
-        ),
-        "Decision Tree": DecisionTreeClassifier(
+        X_train, X_test, y_train, y_test = train_test_split(
+            X,
+            y,
+            test_size=0.2,
+            random_state=42,
+            stratify=y
+        )
+
+    except ValueError:
+
+        X_train, X_test, y_train, y_test = train_test_split(
+            X,
+            y,
+            test_size=0.2,
             random_state=42
-        ),
-        "Random Forest": RandomForestClassifier(
-            random_state=42
-        ),
+        )
+
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=1000),
+        "Decision Tree": DecisionTreeClassifier(random_state=42),
+        "Random Forest": RandomForestClassifier(random_state=42),
         "SVM": SVC(),
-        "KNN": KNeighborsClassifier(
-            n_neighbors=3
-        ),
+        "KNN": KNeighborsClassifier(n_neighbors=3),
         "Naive Bayes": GaussianNB()
     }
 
@@ -168,7 +214,7 @@ def upload_dataset(file: UploadFile = File(...)):
 
     trained_models = {}
 
-    for name, model in model_list.items():
+    for name, model in models.items():
 
         try:
 
@@ -187,26 +233,32 @@ def upload_dataset(file: UploadFile = File(...)):
             )
 
             scores[name] = round(
-                accuracy * 100,
+                float(accuracy * 100),
                 2
             )
 
             trained_models[name] = model
 
-        except Exception:
+        except Exception as error:
 
-            pass
+            scores[name] = f"Error: {str(error)}"
 
-    if len(scores) == 0:
+    valid_scores = {
+        name: score
+        for name, score in scores.items()
+        if isinstance(score, (int, float))
+    }
+
+    if not valid_scores:
 
         return {
             "error": "None of the models could be trained.",
-            "model_scores": {}
+            "model_scores": scores
         }
 
     best_model_name = max(
-        scores,
-        key=scores.get
+        valid_scores,
+        key=valid_scores.get
     )
 
     best_model = trained_models[
@@ -218,33 +270,11 @@ def upload_dataset(file: UploadFile = File(...)):
         "best_model.pkl"
     )
 
-    joblib.dump(
-        scaler,
-        "scaler.pkl"
+    preview = df.head().replace(
+        {np.nan: None}
+    ).to_dict(
+        orient="records"
     )
-
-    joblib.dump(
-        label_encoders,
-        "label_encoder.pkl"
-    )
-
-    joblib.dump(
-        feature_columns,
-        "feature_columns.pkl"
-    )
-
-    joblib.dump(
-        numerical_columns,
-        "numerical_columns.pkl"
-    )
-
-    label_mapping = {}
-
-    for column, encoder in label_encoders.items():
-
-        label_mapping[column] = (
-            encoder.classes_.tolist()
-        )
 
     return {
         "filename": file.filename,
@@ -258,10 +288,7 @@ def upload_dataset(file: UploadFile = File(...)):
         "categorical_columns": categorical_columns,
         "feature_columns": feature_columns,
         "target_column": target_column,
-        "preview": df.head().to_dict(
-            orient="records"
-        ),
-        "label_mapping": label_mapping,
+        "preview": preview,
         "model_scores": scores,
         "best_model": best_model_name
     }
@@ -282,21 +309,25 @@ def predict(data: dict):
         "label_encoder.pkl"
     )
 
-    feature_columns = joblib.load(
-        "feature_columns.pkl"
-    )
-
     numerical_columns = joblib.load(
         "numerical_columns.pkl"
     )
 
-    input_df = pd.DataFrame([data])
+    feature_columns = joblib.load(
+        "feature_columns.pkl"
+    )
+
+    input_df = pd.DataFrame(
+        [data]
+    )
 
     for column, encoder in label_encoders.items():
 
-        input_df[column] = encoder.transform(
-            input_df[column].astype(str)
-        )
+        if column in input_df.columns:
+
+            input_df[column] = encoder.transform(
+                input_df[column].astype(str)
+            )
 
     if numerical_columns:
 
@@ -312,9 +343,12 @@ def predict(data: dict):
         input_df
     )
 
-    if "target_encoder.pkl" in []:
-        pass
+    result = prediction[0]
+
+    if isinstance(result, np.integer):
+
+        result = int(result)
 
     return {
-        "prediction": int(prediction[0])
+        "prediction": result
     }
