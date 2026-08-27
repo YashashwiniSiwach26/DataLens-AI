@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 import pandas as pd
 import numpy as np
 import joblib
@@ -13,7 +13,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score
 
-app = FastAPI()
+app = FastAPI(title="DataLens AI API", version="1.1.0")
 
 @app.get("/")
 def home():
@@ -49,9 +49,15 @@ def models():
     }
 
 @app.post("/upload-dataset/")
-def upload_dataset(file: UploadFile = File(...)):
+def upload_dataset(file: UploadFile = File(...), target_column: str | None = Form(None)):
 
-    df = pd.read_csv(file.file)
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Upload a CSV file.")
+
+    try:
+        df = pd.read_csv(file.file)
+    except (pd.errors.ParserError, UnicodeDecodeError) as error:
+        raise HTTPException(status_code=400, detail=f"Could not read CSV: {error}") from error
 
     if df.empty:
         return {
@@ -80,9 +86,12 @@ def upload_dataset(file: UploadFile = File(...)):
         for col, dtype in df.dtypes.items()
     }
 
-    target_column = df.columns[-1]
+    target_column = target_column or df.columns[-1]
 
-    feature_columns = df.columns[:-1].tolist()
+    if target_column not in df.columns:
+        raise HTTPException(status_code=400, detail="Selected target column does not exist in the dataset.")
+
+    feature_columns = [column for column in df.columns if column != target_column]
 
     numerical_columns = df[feature_columns].select_dtypes(
         include=["number"]
@@ -92,7 +101,14 @@ def upload_dataset(file: UploadFile = File(...)):
         include=["object", "category"]
     ).columns.tolist()
 
-    df = df.dropna()
+    df = df.drop_duplicates().copy()
+    df = df.dropna(subset=[target_column]).copy()
+
+    for column in numerical_columns:
+        df[column] = df[column].fillna(df[column].median())
+
+    for column in categorical_columns:
+        df[column] = df[column].fillna("Missing")
 
     if df.empty:
         return {
@@ -102,13 +118,8 @@ def upload_dataset(file: UploadFile = File(...)):
     label_encoders = {}
 
     for column in categorical_columns:
-
         encoder = LabelEncoder()
-
-        df[column] = encoder.fit_transform(
-            df[column].astype(str)
-        )
-
+        df[column] = encoder.fit_transform(df[column].astype(str))
         label_encoders[column] = encoder
 
     if df[target_column].dtype == "object" or str(df[target_column].dtype) == "category":
@@ -127,6 +138,7 @@ def upload_dataset(file: UploadFile = File(...)):
     else:
 
         target_encoder = None
+        joblib.dump(target_encoder, "target_encoder.pkl")
 
     scaler = StandardScaler()
 
@@ -297,25 +309,18 @@ def upload_dataset(file: UploadFile = File(...)):
 @app.post("/predict")
 def predict(data: dict):
 
-    model = joblib.load(
-        "best_model.pkl"
-    )
+    try:
+        model = joblib.load("best_model.pkl")
+        scaler = joblib.load("scaler.pkl")
+        label_encoders = joblib.load("label_encoder.pkl")
+        numerical_columns = joblib.load("numerical_columns.pkl")
+        feature_columns = joblib.load("feature_columns.pkl")
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=409, detail="Train a model by uploading a dataset before requesting predictions.") from error
 
-    scaler = joblib.load(
-        "scaler.pkl"
-    )
-
-    label_encoders = joblib.load(
-        "label_encoder.pkl"
-    )
-
-    numerical_columns = joblib.load(
-        "numerical_columns.pkl"
-    )
-
-    feature_columns = joblib.load(
-        "feature_columns.pkl"
-    )
+    missing_columns = [column for column in feature_columns if column not in data]
+    if missing_columns:
+        raise HTTPException(status_code=422, detail=f"Missing feature values: {', '.join(missing_columns)}")
 
     input_df = pd.DataFrame(
         [data]
@@ -325,9 +330,11 @@ def predict(data: dict):
 
         if column in input_df.columns:
 
-            input_df[column] = encoder.transform(
-                input_df[column].astype(str)
-            )
+            value = input_df[column].astype(str)
+            unknown = set(value) - set(encoder.classes_)
+            if unknown:
+                raise HTTPException(status_code=422, detail=f"Unknown value for {column}: {', '.join(sorted(unknown))}")
+            input_df[column] = encoder.transform(value)
 
     if numerical_columns:
 
@@ -344,6 +351,13 @@ def predict(data: dict):
     )
 
     result = prediction[0]
+
+    try:
+        target_encoder = joblib.load("target_encoder.pkl")
+        if target_encoder is not None:
+            result = target_encoder.inverse_transform([result])[0]
+    except FileNotFoundError:
+        pass
 
     if isinstance(result, np.integer):
 
