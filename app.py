@@ -91,7 +91,7 @@ if uploaded_file is not None:
     ).columns.tolist()
 
     categorical_columns = df.select_dtypes(
-        include=["object", "category"]
+            include=["object", "category"]
     ).columns.tolist()
 
     col1, col2 = st.columns(2)
