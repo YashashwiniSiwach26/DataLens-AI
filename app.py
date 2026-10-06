@@ -144,7 +144,7 @@ if uploaded_file is not None:
         try:
 
             response = requests.post(
-                "http://127.0.0.1:8000/upload-dataset/",
+                "http://backend:8000/upload-dataset/",
                 files=files,
                 data=data,
                 timeout=60
@@ -206,7 +206,7 @@ if uploaded_file is not None:
             if predict_clicked:
                 try:
                     prediction_response = requests.post(
-                        "http://127.0.0.1:8000/predict",
+                        "http://backend:8000/predict",
                         json=prediction_input,
                         timeout=30
                     )
